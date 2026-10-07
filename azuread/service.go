@@ -89,6 +89,9 @@ func newGraphClient(config AzureADConfig) (*GraphClient, error) {
 
 		credential, err = azidentity.NewManagedIdentityCredential(msiOptions)
 
+	case config.ClientID != nil || config.ClientSecret != nil || clientID != "" || secret != "":
+		return nil, fmt.Errorf("client-secret authentication requires non-empty tenant_id, client_id, and client_secret")
+
 	default:
 		credential, err = azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{TenantID: tenant})
 	}
