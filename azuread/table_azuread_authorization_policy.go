@@ -5,59 +5,95 @@ import (
 
 	"github.com/turbot/steampipe-plugin-sdk/v5/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
-	"github.com/turbot/steampipe-plugin-sdk/v5/plugin/transform"
 )
-
-//// TABLE DEFINITION
 
 func tableAzureAdAuthorizationPolicy(_ context.Context) *plugin.Table {
 	return &plugin.Table{
 		Name:        "azuread_authorization_policy",
 		Description: "Represents a policy that can control Azure Active Directory authorization settings.",
 		List: &plugin.ListConfig{
-			Hydrate: listAdAuthorizationPolicies,
+			Hydrate: listGraphTable,
 		},
 
 		Columns: commonColumns([]*plugin.Column{
-			{Name: "display_name", Type: proto.ColumnType_STRING, Description: "Display name for this policy.", Transform: transform.FromMethod("GetDisplayName")},
-			{Name: "id", Type: proto.ColumnType_STRING, Description: "ID of the authorization policy.", Transform: transform.FromMethod("GetId")},
-			{Name: "description", Type: proto.ColumnType_STRING, Description: "Description of this policy.", Transform: transform.FromMethod("GetDescription")},
+			{
+				Name:        "allow_user_consent_for_risky_apps",
+				Type:        proto.ColumnType_BOOL,
+				Description: "Whether users can consent to risky applications.",
+				Transform:   graphField("allowUserConsentForRiskyApps"),
+			},
+			{
+				Name:        "display_name",
+				Type:        proto.ColumnType_STRING,
+				Description: "Display name for this policy.",
+				Transform:   graphField("displayName"),
+			},
+			{
+				Name:        "id",
+				Type:        proto.ColumnType_STRING,
+				Description: "ID of the authorization policy.",
+				Transform:   graphField("id"),
+			},
+			{
+				Name:        "description",
+				Type:        proto.ColumnType_STRING,
+				Description: "Description of this policy.",
+				Transform:   graphField("description"),
+			},
 
 			// Other fields
-			{Name: "allowed_to_sign_up_email_based_subscriptions", Type: proto.ColumnType_BOOL, Description: "Indicates whether users can sign up for email based subscriptions.", Transform: transform.FromMethod("GetAllowedToSignUpEmailBasedSubscriptions")},
-			{Name: "allowed_to_use_sspr", Type: proto.ColumnType_BOOL, Description: "Indicates whether the Self-Serve Password Reset feature can be used by users on the tenant.", Transform: transform.FromMethod("GetAllowedToUseSSPR")},
-			{Name: "allowed_email_verified_users_to_join_organization", Type: proto.ColumnType_BOOL, Description: "Indicates whether a user can join the tenant by email validation.", Transform: transform.FromMethod("GetAllowEmailVerifiedUsersToJoinOrganization")},
-			{Name: "allow_invites_from", Type: proto.ColumnType_STRING, Description: "Indicates who can invite external users to the organization. Possible values are: none, adminsAndGuestInviters, adminsGuestInvitersAndAllMembers, everyone.", Transform: transform.FromMethod("AuthorizationPolicyAllowInvitesFrom")},
-			{Name: "block_msol_powershell", Type: proto.ColumnType_BOOL, Description: "To disable the use of MSOL PowerShell set this property to true. This will also disable user-based access to the legacy service endpoint used by MSOL PowerShell. This does not affect Azure AD Connect or Microsoft Graph.", Transform: transform.FromMethod("GetBlockMsolPowerShell")},
-			{Name: "guest_user_role_id", Type: proto.ColumnType_STRING, Description: "Represents role templateId for the role that should be granted to guest user.", Transform: transform.FromMethod("GetGuestUserRoleId")},
-			{Name: "allowed_to_read_bitlocker_keys_for_owned_device", Type: proto.ColumnType_BOOL, Description: "Indicates whether the registered owners of a device can read their own BitLocker recovery keys with default user role. When false, users are restricted from recovering BitLocker keys for their owned devices.", Transform: transform.FromMethod("AllowedToReadBitlockerKeysForOwnedDevice")},
+			{
+				Name:        "allowed_to_sign_up_email_based_subscriptions",
+				Type:        proto.ColumnType_BOOL,
+				Description: "Indicates whether users can sign up for email based subscriptions.",
+				Transform:   graphField("allowedToSignUpEmailBasedSubscriptions"),
+			},
+			{
+				Name:        "allowed_to_use_sspr",
+				Type:        proto.ColumnType_BOOL,
+				Description: "Indicates whether the Self-Serve Password Reset feature can be used by users on the tenant.",
+				Transform:   graphField("allowedToUseSSPR"),
+			},
+			{
+				Name:        "allowed_email_verified_users_to_join_organization",
+				Type:        proto.ColumnType_BOOL,
+				Description: "Indicates whether a user can join the tenant by email validation.",
+				Transform:   graphField("allowEmailVerifiedUsersToJoinOrganization"),
+			},
+			{
+				Name:        "allow_invites_from",
+				Type:        proto.ColumnType_STRING,
+				Description: "Indicates who can invite external users to the organization. Possible values are: none, adminsAndGuestInviters, adminsGuestInvitersAndAllMembers, everyone.",
+				Transform:   graphField("allowInvitesFrom"),
+			},
+			{
+				Name:        "block_msol_powershell",
+				Type:        proto.ColumnType_BOOL,
+				Description: "To disable the use of MSOL PowerShell set this property to true. This will also disable user-based access to the legacy service endpoint used by MSOL PowerShell. This does not affect Azure AD Connect or Microsoft Graph.",
+				Transform:   graphField("blockMsolPowerShell"),
+			},
+			{
+				Name:        "guest_user_role_id",
+				Type:        proto.ColumnType_STRING,
+				Description: "Represents role templateId for the role that should be granted to guest user.",
+				Transform:   graphField("guestUserRoleId"),
+			},
 
 			// JSON fields
-			{Name: "default_user_role_permissions", Type: proto.ColumnType_JSON, Description: "Specifies certain customizable permissions for default user role.", Transform: transform.FromMethod("AuthorizationPolicyDefaultUserRolePermissions")},
+			{
+				Name:        "default_user_role_permissions",
+				Type:        proto.ColumnType_JSON,
+				Description: "Specifies certain customizable permissions for default user role.",
+				Transform:   graphField("defaultUserRolePermissions"),
+			},
 
 			// Standard columns
-			{Name: "title", Type: proto.ColumnType_STRING, Description: ColumnDescriptionTitle, Transform: transform.FromMethod("GetDisplayName")},
+			{
+				Name:        "title",
+				Type:        proto.ColumnType_STRING,
+				Description: ColumnDescriptionTitle,
+				Transform:   graphField("displayName"),
+			},
 		}),
 	}
-}
-
-//// LIST FUNCTION
-
-func listAdAuthorizationPolicies(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (interface{}, error) {
-	// Create client
-	client, _, err := GetGraphClient(ctx, d)
-	if err != nil {
-		plugin.Logger(ctx).Error("azuread_authorization_policy.listAdAuthorizationPolicies", "connection_error", err)
-		return nil, err
-	}
-
-	result, err := client.Policies().AuthorizationPolicy().Get(ctx, nil)
-	if err != nil {
-		errObj := getErrorObject(err)
-		plugin.Logger(ctx).Error("listAdAuthorizationPolicies", "list_application_error", errObj)
-		return nil, errObj
-	}
-	d.StreamListItem(ctx, &ADAuthorizationPolicyInfo{result})
-
-	return nil, nil
 }

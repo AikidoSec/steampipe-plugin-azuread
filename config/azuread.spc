@@ -4,6 +4,17 @@ connection "azuread" {
   # Defaults to "AZUREPUBLICCLOUD". Valid environments are "AZUREPUBLICCLOUD", "AZURECHINACLOUD" and "AZUREUSGOVERNMENTCLOUD"
   # environment = "AZUREPUBLICCLOUD"
 
+  # Default Graph version for otherwise-v1.0 tables: "v1.0" or "beta".
+  # Also configurable with AZURE_GRAPH_API_VERSION.
+  # Conditional access, named locations, directory settings, and device registration
+  # policy use beta.
+  # graph_api_version = "v1.0"
+
+  # Optional delegated refresh token for the four internal portal tables.
+  # Prefer AZURE_INTERNAL_API_REFRESH_TOKEN over storing this secret in a file.
+  # Requires tenant_id and AZUREPUBLICCLOUD. Ordinary Graph queries do not need it.
+  # internal_api_refresh_token = "..."
+
   # You can connect to Azure using one of options below:
 
   # Use client secret authentication (https://docs.microsoft.com/en-us/azure/active-directory/develop/howto-create-service-principal-portal#option-2-create-a-new-application-secret)

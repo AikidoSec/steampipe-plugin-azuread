@@ -54,7 +54,7 @@ func commonColumns(c []*plugin.Column) []*plugin.Column {
 var getTenantMemoized = plugin.HydrateFunc(getTenantUncached).Memoize(memoize.WithCacheKeyFunction(getTenantCacheKey))
 
 // Build a cache key for the call to getTenant.
-func getTenantCacheKey(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (interface{}, error) {
+func getTenantCacheKey(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
 	key := "getTenant"
 	return key, nil
 }
@@ -68,7 +68,7 @@ func getTenant(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) 
 	return projectId, nil
 }
 
-func getTenantUncached(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (interface{}, error) {
+func getTenantUncached(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
 	plugin.Logger(ctx).Debug("getTenant")
 	var tenantID string
 	var err error

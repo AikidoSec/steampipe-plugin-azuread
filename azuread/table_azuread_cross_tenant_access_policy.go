@@ -4,73 +4,83 @@ import (
 	"context"
 
 	"github.com/turbot/steampipe-plugin-sdk/v5/grpc/proto"
-	"github.com/turbot/steampipe-plugin-sdk/v5/plugin/transform"
-
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
+	"github.com/turbot/steampipe-plugin-sdk/v5/plugin/transform"
 )
-
-//// TABLE DEFINITION
 
 func tableAzureAdCrossTenantAccessPolicy(_ context.Context) *plugin.Table {
 	return &plugin.Table{
 		Name:        "azuread_cross_tenant_access_policy",
-		Description: "Represents an Azure Active Directory (Azure AD) Cross-Tenant Access Policy.",
+		Description: "Cross-tenant access policy and its default and partner configurations.",
 		List: &plugin.ListConfig{
-			Hydrate: listAdCrossTenantAccessPolicies,
-			IgnoreConfig: &plugin.IgnoreConfig{
-				ShouldIgnoreErrorFunc: isIgnorableErrorPredicate([]string{"Request_UnsupportedQuery"}),
-			},
+			Hydrate: listGraphTable,
 		},
-
 		Columns: commonColumns([]*plugin.Column{
-			{Name: "id", Type: proto.ColumnType_STRING, Description: "Specifies the identifier of a crossTenantAccessPolicy object.", Transform: transform.FromMethod("GetId")},
-			{Name: "display_name", Type: proto.ColumnType_STRING, Description: "Specifies a display name for the crossTenantAccessPolicy object.", Transform: transform.FromMethod("GetDisplayName")},
-			{Name: "allowed_cloud_endpoints", Type: proto.ColumnType_JSON, Description: "Used to specify which Microsoft clouds an organization would like to collaborate with. By default, this value is empty. Supported values are: microsoftonline.com, microsoftonline.us, and partner.microsoftonline.cn.", Transform: transform.FromMethod("CrossTenantAccessPolicyAllowedCloudEndpoints")},
-			{Name: "default_configuration", Type: proto.ColumnType_JSON, Description: "Defines the default configuration for how your organization interacts with external Microsoft Entra organizations.", Transform: transform.FromMethod("CrossTenantAccessPolicyDefault")},
-			{Name: "partners", Type: proto.ColumnType_JSON, Description: "Defines partner-specific configurations for external Microsoft Entra organizations.", Transform: transform.FromMethod("CrossTenantAccessPolicyPartners")},
-
-			// Standard columns
-			{Name: "title", Type: proto.ColumnType_STRING, Description: ColumnDescriptionTitle, Transform: transform.From(adCrossTenantAccessPolicyTitle)},
+			{
+				Name:        "id",
+				Type:        proto.ColumnType_STRING,
+				Description: "The policy identifier.",
+				Transform:   graphField("id"),
+			},
+			{
+				Name:        "display_name",
+				Type:        proto.ColumnType_STRING,
+				Description: "The policy display name.",
+				Transform:   graphField("displayName"),
+			},
+			{
+				Name:        "allowed_cloud_endpoints",
+				Type:        proto.ColumnType_JSON,
+				Description: "Microsoft clouds with which the organization can collaborate.",
+				Transform:   graphField("allowedCloudEndpoints"),
+			},
+			{
+				Name:        "default_configuration",
+				Type:        proto.ColumnType_JSON,
+				Description: "Default configuration for interactions with external organizations.",
+				Hydrate:     getCrossTenantDefault,
+				Transform:   transform.FromValue(),
+			},
+			{
+				Name:        "partners",
+				Type:        proto.ColumnType_JSON,
+				Description: "Partner-specific configurations for external organizations.",
+				Hydrate:     getCrossTenantPartners,
+				Transform:   transform.FromValue(),
+			},
+			{
+				Name:        "title",
+				Type:        proto.ColumnType_STRING,
+				Description: ColumnDescriptionTitle,
+				Transform:   graphTitle("displayName", "id"),
+			},
 		}),
 	}
 }
 
-//// LIST FUNCTION
-
-func listAdCrossTenantAccessPolicies(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (interface{}, error) {
-	// Create client
-	client, _, err := GetGraphClient(ctx, d)
+func getCrossTenantDefault(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (any, error) {
+	client, err := GetGraphClient(ctx, d)
 	if err != nil {
-		plugin.Logger(ctx).Error("azuread_cross_tenant_access_policy.listAdCrossTenantAccessPolicies", "connection_error", err)
 		return nil, err
 	}
 
-	// Get the cross-tenant access policy
-	policy, err := client.Policies().CrossTenantAccessPolicy().Get(ctx, nil)
-	if err != nil {
-		errObj := getErrorObject(err)
-		plugin.Logger(ctx).Error("listAdCrossTenantAccessPolicies", "get_cross_tenant_access_policy_error", errObj)
-		return nil, errObj
-	}
-
-	// Stream the single policy item
-	d.StreamListItem(ctx, &ADCrossTenantAccessPolicyInfo{policy})
-
-	return nil, nil
+	return client.get(ctx, graphDefault, "policies/crossTenantAccessPolicy/default", nil)
 }
 
-//// TRANSFORM FUNCTIONS
-
-func adCrossTenantAccessPolicyTitle(_ context.Context, d *transform.TransformData) (interface{}, error) {
-	data := d.HydrateItem.(*ADCrossTenantAccessPolicyInfo)
-	if data == nil {
-		return nil, nil
+func getCrossTenantPartners(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (any, error) {
+	client, err := GetGraphClient(ctx, d)
+	if err != nil {
+		return nil, err
 	}
 
-	title := data.GetDisplayName()
-	if title == nil {
-		title = data.GetId()
+	partners := []graphObject{}
+	err = client.list(ctx, graphDefault, "policies/crossTenantAccessPolicy/partners", nil, func(row graphObject) bool {
+		partners = append(partners, row)
+		return true
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return title, nil
+	return partners, nil
 }
