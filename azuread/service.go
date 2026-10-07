@@ -3,8 +3,6 @@ package azuread
 import (
 	"bytes"
 	"context"
-	"crypto"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -58,8 +56,6 @@ func newGraphClient(config AzureADConfig) (*GraphClient, error) {
 	tenant := configString(config.TenantID, "AZURE_TENANT_ID")
 	clientID := configString(config.ClientID, "AZURE_CLIENT_ID")
 	secret := configString(config.ClientSecret, "AZURE_CLIENT_SECRET")
-	certificatePath := configString(config.CertificatePath, "AZURE_CERTIFICATE_PATH")
-	password := configString(config.CertificatePassword, "AZURE_CERTIFICATE_PASSWORD")
 	environment := configString(config.Environment, "AZURE_ENVIRONMENT")
 	version := configString(config.GraphAPIVersion, "AZURE_GRAPH_API_VERSION")
 
@@ -82,24 +78,6 @@ func newGraphClient(config AzureADConfig) (*GraphClient, error) {
 	switch {
 	case tenant != "" && clientID != "" && secret != "":
 		credential, err = azidentity.NewClientSecretCredential(tenant, clientID, secret, &azidentity.ClientSecretCredentialOptions{
-			ClientOptions: options,
-		})
-
-	case tenant != "" && clientID != "" && certificatePath != "":
-		var data []byte
-		data, err = os.ReadFile(certificatePath)
-		if err != nil {
-			return nil, fmt.Errorf("reading client certificate: %w", err)
-		}
-
-		var certs []*x509.Certificate
-		var key crypto.PrivateKey
-		certs, key, err = azidentity.ParseCertificates(data, []byte(password))
-		if err != nil {
-			return nil, fmt.Errorf("parsing client certificate: %w", err)
-		}
-
-		credential, err = azidentity.NewClientCertificateCredential(tenant, clientID, certs, key, &azidentity.ClientCertificateCredentialOptions{
 			ClientOptions: options,
 		})
 

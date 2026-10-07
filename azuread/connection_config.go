@@ -8,8 +8,6 @@ type AzureADConfig struct {
 	TenantID                *string `hcl:"tenant_id"`
 	ClientID                *string `hcl:"client_id"`
 	ClientSecret            *string `hcl:"client_secret"`
-	CertificatePath         *string `hcl:"certificate_path"`
-	CertificatePassword     *string `hcl:"certificate_password"`
 	EnableMsi               *bool   `hcl:"enable_msi"`
 	MsiEndpoint             *string `hcl:"msi_endpoint"`
 	Environment             *string `hcl:"environment"`

@@ -87,13 +87,6 @@ connection "azuread" {
   # client_id     = "YYYYYYYY-YYYY-YYYY-YYYY-YYYYYYYYYYYY"
   # client_secret = "ZZZZZZZZZZZZZZZZZZZZZZZZ"
 
-  # Use client certificate authentication (https://docs.microsoft.com/en-us/azure/active-directory/develop/howto-create-service-principal-portal#option-1-upload-a-certificate)
-  # required options:
-  # tenant_id             = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-  # client_id             = "YYYYYYYY-YYYY-YYYY-YYYY-YYYYYYYYYYYY"
-  # certificate_path      = "~/home/azure_cert.pem"
-  # certificate_password  = "notreal~pwd"
-
   # Use a managed identity (https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview)
   # This method is useful with Azure virtual machines
   # tenant_id  = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
@@ -105,7 +98,7 @@ connection "azuread" {
 }
 ```
 
-By default, all options are commented out in the default connection, thus Steampipe will resolve your credentials using the same order as mentioned in [Credentials](#credentials). This provides a quick way to get started with Steampipe, but you will probably want to customize your experience using configuration options for querying multiple tenants, [configuring credentials](#configuring-active-directory-credentials) from your Azure CLI, Client Certificate, etc.
+By default, all options are commented out in the default connection, thus Steampipe will resolve your credentials using the same order as mentioned in [Credentials](#credentials). This provides a quick way to get started with Steampipe, but you will probably want to customize your experience using configuration options for querying multiple tenants and [configuring credentials](#configuring-active-directory-credentials).
 
 ## Multi-Tenant Connections
 
@@ -183,9 +176,8 @@ connection "azuread_all" {
 The Azure AD plugin support multiple formats and authentication mechanisms, and they are tried in the below order:
 
 1. [Client Secret Credentials](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-saml-bearer-assertion#prerequisites) if set; otherwise
-2. [Client Certificate Credentials](https://docs.microsoft.com/en-us/azure/active-directory/develop/active-directory-certificate-credentials#register-your-certificate-with-microsoft-identity-platform) if set; otherwise
-3. Azure [Managed System Identity](https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/how-managed-identities-work-vm#system-assigned-managed-identity) (useful with virtual machines) if set; otherwise
-4. If no credentials are supplied, then the [az cli](https://docs.microsoft.com/en-us/cli/azure/) credentials are used
+2. Azure [Managed System Identity](https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/how-managed-identities-work-vm#system-assigned-managed-identity) (useful with virtual machines) if set; otherwise
+3. If no credentials are supplied, then the [az cli](https://docs.microsoft.com/en-us/cli/azure/) credentials are used
 
 ### Client Secret Credentials
 
@@ -201,25 +193,6 @@ You may specify the tenant ID, client ID, and client secret to authenticate:
     tenant_id     = "00000000-0000-0000-0000-000000000000"
     client_id     = "00000000-0000-0000-0000-000000000000"
     client_secret = "my plaintext password"
-  }
-```
-
-### Client Certificate Credentials
-
-You may specify the tenant ID, client ID, certificate path, and certificate password to authenticate:
-
-- `tenant_id`: Specify the tenant to authenticate with.
-- `client_id`: Specify the app client ID to use.
-- `certificate_path`: Specify the certificate path to use.
-- `certificate_password`: Specify the certificate password to use.
-
-```hcl
-  connection "azuread_via_sp_cert" {
-    plugin               = "azuread"
-    tenant_id            = "00000000-0000-0000-0000-000000000000"
-    client_id            = "00000000-0000-0000-0000-000000000000"
-    certificate_path     = "path/to/file.pem"
-    certificate_password = "my plaintext password"
   }
 ```
 
@@ -254,15 +227,13 @@ connection "azuread" {
 
 ### Credentials from Environment Variables
 
-The Azure AD plugin will use the standard Azure environment variables to obtain credentials **only if other arguments (`tenant_id`, `client_id`, `client_secret`, `certificate_path`, etc..) are not specified** in the connection:
+The Azure AD plugin will use the standard Azure environment variables to obtain credentials **only if other arguments (`tenant_id`, `client_id`, `client_secret`, etc..) are not specified** in the connection:
 
 ```sh
 export AZURE_TENANT_ID="00000000-0000-0000-0000-000000000000"
 export AZURE_ENVIRONMENT="AZUREPUBLICCLOUD" # Defaults to "AZUREPUBLICCLOUD". Valid environments are "AZUREPUBLICCLOUD", "AZURECHINACLOUD" and "AZUREUSGOVERNMENTCLOUD"
 export AZURE_CLIENT_ID="00000000-0000-0000-0000-000000000000"
 export AZURE_CLIENT_SECRET="my plaintext secret"
-export AZURE_CERTIFICATE_PATH=path/to/file.pem
-export AZURE_CERTIFICATE_PASSWORD="my plaintext password"
 ```
 
 ```hcl

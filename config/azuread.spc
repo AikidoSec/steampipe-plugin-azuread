@@ -22,13 +22,6 @@ connection "azuread" {
   # client_id     = "YYYYYYYY-YYYY-YYYY-YYYY-YYYYYYYYYYYY"
   # client_secret = "ZZZZZZZZZZZZZZZZZZZZZZZZ"
 
-  # Use client certificate authentication (https://docs.microsoft.com/en-us/azure/active-directory/develop/howto-create-service-principal-portal#option-1-upload-a-certificate)
-  # required options:
-  # tenant_id             = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-  # client_id             = "YYYYYYYY-YYYY-YYYY-YYYY-YYYYYYYYYYYY"
-  # certificate_path      = "~/home/azure_cert.pem"
-  # certificate_password  = "notreal~pwd"
-
   # Use a managed identity (https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview)
   # This method is useful with Azure virtual machines
   # tenant_id  = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"

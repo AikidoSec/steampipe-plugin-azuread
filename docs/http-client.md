@@ -1,6 +1,6 @@
 # Graph HTTP collection
 
-The plugin queries Microsoft Graph using client-secret, certificate, managed-identity, or Azure CLI credentials. Internal portal queries require a separate delegated refresh token.
+The plugin queries Microsoft Graph using client-secret, managed-identity, or Azure CLI credentials. Internal portal queries require a separate delegated refresh token.
 
 ## API routing
 

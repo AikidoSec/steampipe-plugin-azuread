@@ -454,7 +454,13 @@ func graphQuery(spec graphTableSpec, d *plugin.QueryData, get bool) url.Values {
 					var value string
 					switch col.Type {
 					case proto.ColumnType_BOOL:
-						value = strconv.FormatBool(q.Value.GetBoolValue())
+						boolValue := q.Value.GetBoolValue()
+						if q.Operator == "<>" {
+							op = "eq"
+							boolValue = !boolValue
+						}
+
+						value = strconv.FormatBool(boolValue)
 					case proto.ColumnType_TIMESTAMP:
 						value = q.Value.GetTimestampValue().AsTime().Format(time.RFC3339Nano)
 					default:
