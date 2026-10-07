@@ -23,6 +23,7 @@ type graphTableSpec struct {
 	pageSize     int
 	project      bool
 	settings     bool
+	fallback     func(context.Context, *GraphClient) (graphObject, error)
 }
 
 var graphTables = map[string]graphTableSpec{
@@ -140,21 +141,25 @@ var graphTables = map[string]graphTableSpec{
 		singleton: true,
 	},
 	"azuread_password_reset_policy": {
+		fallback:  getPasswordResetPolicyFromGraph,
 		path:      "PasswordReset/PasswordResetPolicies",
 		endpoint:  graphPortal,
 		singleton: true,
 	},
 	"azuread_password_policy": {
+		fallback:  getPasswordPolicyFromGraph,
 		path:      "AuthenticationMethods/PasswordPolicy",
 		endpoint:  graphPortal,
 		singleton: true,
 	},
 	"azuread_directory_properties": {
+		fallback:  getDirectoryPropertiesFromGraph,
 		path:      "Directories/Properties",
 		endpoint:  graphPortal,
 		singleton: true,
 	},
 	"azuread_self_service_group_management": {
+		fallback:  getSelfServiceGroupManagementFromGraph,
 		path:      "Directories/SsgmProperties",
 		endpoint:  graphPortal,
 		singleton: true,
@@ -201,7 +206,11 @@ func listGraphTable(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateD
 	}
 
 	if spec.endpoint == graphPortal && client.portalToken == nil {
-		row, err := client.graphPolicyFallback(ctx, d.Table.Name)
+		if spec.fallback == nil {
+			return nil, fmt.Errorf("no Graph policy mapping for %s", d.Table.Name)
+		}
+
+		row, err := spec.fallback(ctx, client)
 		if err != nil {
 			return nil, err
 		}

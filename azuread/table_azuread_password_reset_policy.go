@@ -1,9 +1,25 @@
 package azuread
 
 import (
+	"context"
+
 	"github.com/turbot/steampipe-plugin-sdk/v5/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
 )
+
+func getPasswordResetPolicyFromGraph(ctx context.Context, client *GraphClient) (graphObject, error) {
+	policy, err := client.get(ctx, graphDefault, "policies/authorizationPolicy", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return graphObject{
+		"dataSource":    "graph",
+		"sourcePayload": graphObject{"authorizationPolicy": policy},
+		// This applies to administrators, not the user SSPR enablement scope.
+		"administratorsAllowedToUseSSPR": policy["allowedToUseSSPR"],
+	}, nil
+}
 
 func tableAzureAdPasswordResetPolicy() *plugin.Table {
 	return &plugin.Table{

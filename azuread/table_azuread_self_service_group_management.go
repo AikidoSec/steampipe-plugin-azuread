@@ -1,9 +1,54 @@
 package azuread
 
 import (
+	"context"
+	"fmt"
+	"strconv"
+
 	"github.com/turbot/steampipe-plugin-sdk/v5/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
 )
+
+func getSelfServiceGroupManagementFromGraph(ctx context.Context, client *GraphClient) (graphObject, error) {
+	policy, err := client.get(ctx, graphDefault, "policies/authorizationPolicy", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	permissions, _ := policy["defaultUserRolePermissions"].(map[string]any)
+	settings, err := policySettings(ctx, client, graphDefault, "groupSettings", "Group.Unified")
+	if err != nil {
+		return nil, err
+	}
+
+	row := graphObject{
+		"dataSource": "graph",
+		"sourcePayload": graphObject{
+			"authorizationPolicy": policy,
+			"groupSettings":       settings,
+		},
+		"usersCanCreateSecurityGroups": permissions["allowedToCreateSecurityGroups"],
+	}
+
+	for _, setting := range settings {
+		values := policySettingValues(setting)
+
+		if v, ok := values["EnableGroupCreation"]; ok {
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return nil, fmt.Errorf("invalid EnableGroupCreation: %w", err)
+			}
+
+			row["usersCanCreateMicrosoft365Groups"] = b
+		}
+
+		if v, ok := values["GroupCreationAllowedGroupId"]; ok {
+			row["groupCreationAllowedGroupId"] = v
+		}
+	}
+
+	return row, nil
+}
 
 func tableAzureAdSelfServiceGroupManagement() *plugin.Table {
 	return &plugin.Table{

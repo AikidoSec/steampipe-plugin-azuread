@@ -1,9 +1,74 @@
 package azuread
 
 import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/turbot/steampipe-plugin-sdk/v5/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
 )
+
+func getPasswordPolicyFromGraph(ctx context.Context, client *GraphClient) (graphObject, error) {
+	settings, err := policySettings(ctx, client, graphBeta, "settings", "Password Rule Settings")
+	if err != nil {
+		return nil, err
+	}
+
+	row := graphObject{
+		"dataSource":    "graph",
+		"sourcePayload": graphObject{"settings": settings},
+	}
+
+	for _, setting := range settings {
+		values := policySettingValues(setting)
+
+		for from, to := range map[string]string{
+			"LockoutThreshold":         "lockoutThreshold",
+			"LockoutDurationInSeconds": "lockoutDurationInSeconds",
+		} {
+			if v, ok := values[from]; ok {
+				n, err := strconv.Atoi(v)
+				if err != nil {
+					return nil, fmt.Errorf("invalid %s: %w", from, err)
+				}
+
+				row[to] = n
+			}
+		}
+
+		for from, to := range map[string]string{
+			"EnableBannedPasswordCheck":           "enforceCustomBannedPasswords",
+			"EnableBannedPasswordCheckOnPremises": "enableBannedPasswordCheckOnPremises",
+		} {
+			if v, ok := values[from]; ok {
+				b, err := strconv.ParseBool(v)
+				if err != nil {
+					return nil, fmt.Errorf("invalid %s: %w", from, err)
+				}
+
+				row[to] = b
+			}
+		}
+
+		if v, ok := values["BannedPasswordList"]; ok {
+			list := []string{}
+			if v != "" {
+				list = strings.Split(v, "\t")
+			}
+
+			row["customBannedPasswords"] = list
+		}
+
+		// Graph uses Audit/Enforce strings; the portal uses a numeric enum.
+		if v, ok := values["BannedPasswordCheckOnPremisesMode"]; ok {
+			row["graphOnPremisesPasswordCheckMode"] = v
+		}
+	}
+
+	return row, nil
+}
 
 func tableAzureAdPasswordPolicy() *plugin.Table {
 	return &plugin.Table{

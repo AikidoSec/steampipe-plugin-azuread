@@ -1,9 +1,27 @@
 package azuread
 
 import (
+	"context"
+
 	"github.com/turbot/steampipe-plugin-sdk/v5/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
 )
+
+func getDirectoryPropertiesFromGraph(ctx context.Context, client *GraphClient) (graphObject, error) {
+	policy, err := client.get(ctx, graphDefault, "policies/authorizationPolicy", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	permissions, _ := policy["defaultUserRolePermissions"].(map[string]any)
+
+	return graphObject{
+		"dataSource":           "graph",
+		"sourcePayload":        graphObject{"authorizationPolicy": policy},
+		"usersCanRegisterApps": permissions["allowedToCreateApps"],
+		"allowInvitesFrom":     policy["allowInvitesFrom"],
+	}, nil
+}
 
 func tableAzureAdDirectoryProperties() *plugin.Table {
 	return &plugin.Table{
