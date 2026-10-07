@@ -7,194 +7,233 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	a "github.com/microsoft/kiota-authentication-azure-go"
-	msgraphsdkgo "github.com/microsoftgraph/msgraph-sdk-go"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
 )
 
-/*
-GetGraphClient creates a graph service client configured from (~/.steampipe/config, environment variables and CLI) in the order:
-1. Client secret
-2. Client certificate
-3. MSI
-4. CLI
-*/
-func GetGraphClient(ctx context.Context, d *plugin.QueryData) (*msgraphsdkgo.GraphServiceClient, *msgraphsdkgo.GraphRequestAdapter, error) {
-	logger := plugin.Logger(ctx)
-
-	// Disable caching since it only saves ~.25ms and results in an SDK error
-	// when running consecutive queries for the sign_in_report and service_principal
-	// tables:
-	// Error: rpc error: code = Internal desc = hydrate function listAdSignInReports failed with panic runtime error: invalid memory address or nil pointer dereference (SQLSTATE HV000)
-	// Have we already created and cached the session?
-	// sessionCacheKey := "GetGraphClient"
-	// if cachedData, ok := d.ConnectionManager.Cache.Get(sessionCacheKey); ok {
-	// 	return cachedData.(*msgraphsdkgo.GraphServiceClient), nil, nil
-	// }
-
-	var tenantID, environment, clientID, clientSecret, certificatePath, certificatePassword string
-
-	azureADConfig := GetConfig(d.Connection)
-	if azureADConfig.TenantID != nil {
-		tenantID = *azureADConfig.TenantID
-	} else {
-		tenantID = os.Getenv("AZURE_TENANT_ID")
-	}
-
-	if azureADConfig.Environment != nil {
-		environment = *azureADConfig.Environment
-	} else {
-		environment = os.Getenv("AZURE_ENVIRONMENT")
-	}
-
-	var enableMsi bool
-	if azureADConfig.EnableMsi != nil {
-		enableMsi = *azureADConfig.EnableMsi
-	}
-
-	// 1. Client secret credentials
-	if azureADConfig.ClientID != nil {
-		clientID = *azureADConfig.ClientID
-	} else {
-		clientID = os.Getenv("AZURE_CLIENT_ID")
-	}
-
-	if azureADConfig.ClientSecret != nil {
-		clientSecret = *azureADConfig.ClientSecret
-	} else {
-		clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
-	}
-
-	// 2. Client certificate credentials
-	if azureADConfig.CertificatePath != nil {
-		certificatePath = *azureADConfig.CertificatePath
-	} else {
-		certificatePath = os.Getenv("AZURE_CERTIFICATE_PATH")
-	}
-
-	if azureADConfig.CertificatePassword != nil {
-		certificatePassword = *azureADConfig.CertificatePassword
-	} else {
-		certificatePassword = os.Getenv("AZURE_CERTIFICATE_PASSWORD")
-	}
-
-	var cloudConfiguration cloud.Configuration
-	switch environment {
-	case "AZURECHINACLOUD":
-		cloudConfiguration = cloud.AzureChina
-	case "AZUREUSGOVERNMENTCLOUD":
-		cloudConfiguration = cloud.AzureGovernment
-	default:
-		cloudConfiguration = cloud.AzurePublic
-	}
-
-	var cred azcore.TokenCredential
-	var err error
-	if tenantID == "" { // CLI authentication
-		cred, err = azidentity.NewAzureCLICredential(
-			&azidentity.AzureCLICredentialOptions{},
-		)
-		if err != nil {
-			logger.Error("GetGraphClient", "cli_credential_error", err)
-			return nil, nil, err
+func GetGraphClient(_ context.Context, d *plugin.QueryData) (*GraphClient, error) {
+	const cacheKey = "graphHTTPClient"
+	if d.ConnectionManager != nil {
+		if cached, ok := d.ConnectionManager.Cache.Get(cacheKey); ok {
+			return cached.(*GraphClient), nil
 		}
-	} else if tenantID != "" && clientID != "" && clientSecret != "" { // Client secret authentication
-		cred, err = azidentity.NewClientSecretCredential(
-			tenantID,
-			clientID,
-			clientSecret,
-			&azidentity.ClientSecretCredentialOptions{
-				ClientOptions: policy.ClientOptions{
-					Cloud: cloudConfiguration,
-				},
-			},
-		)
+	}
+
+	client, err := newGraphClient(GetConfig(d.Connection))
+	if err != nil {
+		return nil, err
+	}
+
+	if d.ConnectionManager != nil {
+		d.ConnectionManager.Cache.Set(cacheKey, client)
+	}
+
+	return client, nil
+}
+
+func configString(value *string, env string) string {
+	if value != nil {
+		return *value
+	}
+
+	return os.Getenv(env)
+}
+
+func newGraphClient(config AzureADConfig) (*GraphClient, error) {
+	tenant := configString(config.TenantID, "AZURE_TENANT_ID")
+	clientID := configString(config.ClientID, "AZURE_CLIENT_ID")
+	secret := configString(config.ClientSecret, "AZURE_CLIENT_SECRET")
+	certificatePath := configString(config.CertificatePath, "AZURE_CERTIFICATE_PATH")
+	password := configString(config.CertificatePassword, "AZURE_CERTIFICATE_PASSWORD")
+	environment := configString(config.Environment, "AZURE_ENVIRONMENT")
+	version := configString(config.GraphAPIVersion, "AZURE_GRAPH_API_VERSION")
+
+	if version == "" {
+		version = "v1.0"
+	}
+
+	if version != "v1.0" && version != "beta" {
+		return nil, fmt.Errorf("graph_api_version must be v1.0 or beta")
+	}
+
+	graphURL, loginURL, cloudConfig, err := graphCloud(environment)
+	if err != nil {
+		return nil, err
+	}
+
+	options := azcore.ClientOptions{Cloud: cloudConfig}
+	var credential azcore.TokenCredential
+
+	switch {
+	case tenant != "" && clientID != "" && secret != "":
+		credential, err = azidentity.NewClientSecretCredential(tenant, clientID, secret, &azidentity.ClientSecretCredentialOptions{
+			ClientOptions: options,
+		})
+
+	case tenant != "" && clientID != "" && certificatePath != "":
+		var data []byte
+		data, err = os.ReadFile(certificatePath)
 		if err != nil {
-			logger.Error("GetGraphClient", "client_secret_credential_error", err)
-			return nil, nil, err
-		}
-	} else if tenantID != "" && clientID != "" && certificatePath != "" { // Client certificate authentication
-		// Load certificate from given path
-		loadFile, err := os.ReadFile(certificatePath)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error reading certificate from %s: %v", certificatePath, err)
+			return nil, fmt.Errorf("reading client certificate: %w", err)
 		}
 
 		var certs []*x509.Certificate
 		var key crypto.PrivateKey
-		if certificatePassword == "" {
-			certs, key, err = azidentity.ParseCertificates(loadFile, nil)
-		} else {
-			certs, key, err = azidentity.ParseCertificates(loadFile, []byte(certificatePassword))
+		certs, key, err = azidentity.ParseCertificates(data, []byte(password))
+		if err != nil {
+			return nil, fmt.Errorf("parsing client certificate: %w", err)
 		}
 
-		if err != nil {
-			return nil, nil, fmt.Errorf("error parsing certificate from %s: %v", certificatePath, err)
-		}
-
-		cred, err = azidentity.NewClientCertificateCredential(
-			tenantID,
-			clientID,
-			certs,
-			key,
-			&azidentity.ClientCertificateCredentialOptions{
-				ClientOptions: policy.ClientOptions{
-					Cloud: cloudConfiguration,
-				},
-			},
-		)
-		if err != nil {
-			logger.Error("GetGraphClient", "client_certificate_credential_error", err)
-			return nil, nil, err
-		}
-	} else if enableMsi { // Managed identity authentication
-		cred, err = azidentity.NewManagedIdentityCredential(
-			&azidentity.ManagedIdentityCredentialOptions{},
-		)
-		if err != nil {
-			logger.Error("GetGraphClient", "managed_identity_credential_error", err)
-			return nil, nil, err
-		}
-	}
-
-	// update the Authentication provider scope if env is china cloud
-	var auth *a.AzureIdentityAuthenticationProvider
-	if environment == "AZURECHINACLOUD" {
-		auth, err = a.NewAzureIdentityAuthenticationProviderWithScopes(cred, []string{
-			"https://microsoftgraph.chinacloudapi.cn/.default",
+		credential, err = azidentity.NewClientCertificateCredential(tenant, clientID, certs, key, &azidentity.ClientCertificateCredentialOptions{
+			ClientOptions: options,
 		})
-	} else {
-		auth, err = a.NewAzureIdentityAuthenticationProvider(cred)
+
+	case config.EnableMsi != nil && *config.EnableMsi:
+		msiOptions := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: options}
+		if clientID != "" {
+			msiOptions.ID = azidentity.ClientID(clientID)
+		}
+
+		credential, err = azidentity.NewManagedIdentityCredential(msiOptions)
+
+	default:
+		credential, err = azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{TenantID: tenant})
 	}
+
 	if err != nil {
-		return nil, nil, fmt.Errorf("error creating authentication provider: %v", err)
+		return nil, err
+	}
+	httpClient := &http.Client{
+		Timeout: 60 * time.Second,
+		// API and token endpoints must not redirect credentials to another service.
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
-	adapter, err := msgraphsdkgo.NewGraphRequestAdapter(auth)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error creating graph adapter: %v", err)
+	client := &GraphClient{
+		http:      httpClient,
+		graphURL:  graphURL,
+		version:   version,
+		portalURL: "https://main.iam.ad.ext.azure.com/api",
+		token: func(ctx context.Context) (string, error) {
+			token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
+				Scopes: []string{graphURL + "/.default"},
+			})
+
+			return token.Token, err
+		},
 	}
 
-	// update the baseurl if env is china cloud
-	if environment == "AZURECHINACLOUD" {
-		adapter.SetBaseUrl("https://microsoftgraph.chinacloudapi.cn/v1.0")
+	refresh := configString(config.InternalAPIRefreshToken, "AZURE_INTERNAL_API_REFRESH_TOKEN")
+	if refresh != "" {
+		if graphURL != "https://graph.microsoft.com" {
+			return nil, fmt.Errorf("internal portal collection is only available in AZUREPUBLICCLOUD")
+		}
+
+		if tenant == "" {
+			return nil, fmt.Errorf("tenant_id is required with internal_api_refresh_token")
+		}
+
+		client.portalToken = newPortalTokenSource(httpClient, loginURL+"/"+url.PathEscape(tenant)+"/oauth2/token", refresh)
 	}
 
-	client := msgraphsdkgo.NewGraphServiceClient(adapter)
+	return client, nil
+}
 
-	// See comment above as to why caching is disabled
-	// Save session into cache
-	// d.ConnectionManager.Cache.Set(sessionCacheKey, client)
+func graphCloud(environment string) (string, string, cloud.Configuration, error) {
+	switch environment {
+	case "", "AZUREPUBLICCLOUD":
+		return "https://graph.microsoft.com", "https://login.microsoftonline.com", cloud.AzurePublic, nil
+	case "AZURECHINACLOUD":
+		return "https://microsoftgraph.chinacloudapi.cn", "https://login.chinacloudapi.cn", cloud.AzureChina, nil
+	case "AZUREUSGOVERNMENTCLOUD":
+		return "https://graph.microsoft.us", "https://login.microsoftonline.us", cloud.AzureGovernment, nil
+	default:
+		return "", "", cloud.Configuration{}, fmt.Errorf("unsupported Azure environment %q", environment)
+	}
+}
 
-	return client, adapter, nil
+// The portal requires its own delegated token, not a Microsoft Graph token.
+func newPortalTokenSource(client *http.Client, tokenURL, refreshToken string) tokenSource {
+	var mu sync.Mutex
+	var accessToken string
+	var expires time.Time
+
+	return func(ctx context.Context) (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if accessToken != "" && time.Now().Add(time.Minute).Before(expires) {
+			return accessToken, nil
+		}
+
+		form := url.Values{
+			"client_id":     {"1950a258-227b-4e31-a9cf-717495945fc2"},
+			"grant_type":    {"refresh_token"},
+			"refresh_token": {refreshToken},
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+		if err != nil {
+			return "", err
+		}
+
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("failed to close response body: %v", err)
+			}
+		}()
+
+		var result struct {
+			AccessToken  string          `json:"access_token"`
+			RefreshToken string          `json:"refresh_token"`
+			ExpiresIn    json.RawMessage `json:"expires_in"`
+			Error        string          `json:"error"`
+		}
+
+		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+			return "", fmt.Errorf("decoding internal portal token response: %w", err)
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 || result.Error != "" || result.AccessToken == "" {
+			return "", fmt.Errorf("internal portal token acquisition failed (HTTP %d, code %s)", resp.StatusCode, result.Error)
+		}
+
+		seconds, err := strconv.Atoi(strings.Trim(string(result.ExpiresIn), `"`))
+		if err != nil || seconds <= 0 {
+			seconds = 300
+		}
+
+		accessToken, expires = result.AccessToken, time.Now().Add(time.Duration(seconds)*time.Second)
+		if result.RefreshToken != "" {
+			refreshToken = result.RefreshToken
+		}
+
+		return accessToken, nil
+	}
 }
 
 // https://github.com/Azure/go-autorest/blob/3fb5326fea196cd5af02cf105ca246a0fba59021/autorest/azure/cli/token.go#L126

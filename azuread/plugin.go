@@ -29,6 +29,11 @@ func Plugin(ctx context.Context) *plugin.Plugin {
 			NewInstance: ConfigInstance,
 		},
 		TableMap: map[string]*plugin.Table{
+			"azuread_device_registration_policy":                   tableAzureAdDeviceRegistrationPolicy(),
+			"azuread_password_policy":                              tableAzureAdPasswordPolicy(),
+			"azuread_password_reset_policy":                        tableAzureAdPasswordResetPolicy(),
+			"azuread_directory_properties":                         tableAzureAdDirectoryProperties(),
+			"azuread_self_service_group_management":                tableAzureAdSelfServiceGroupManagement(),
 			"azuread_admin_consent_request_policy":                 tableAzureAdAdminConsentRequestPolicy(ctx),
 			"azuread_application":                                  tableAzureAdApplication(ctx),
 			"azuread_application_app_role_assigned_to":             tableAzureAdApplicationAppRoleAssignment(ctx),

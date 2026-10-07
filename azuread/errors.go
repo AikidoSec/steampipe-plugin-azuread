@@ -3,15 +3,18 @@ package azuread
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
-	"github.com/microsoftgraph/msgraph-sdk-go/models/odataerrors"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
 )
 
 type RequestError struct {
-	Code    string
-	Message string
+	StatusCode      int
+	Code            string
+	Message         string
+	RequestID       string `json:",omitempty"`
+	ClientRequestID string `json:",omitempty"`
 }
 
 func (m *RequestError) Error() string {
@@ -19,18 +22,14 @@ func (m *RequestError) Error() string {
 	if err != nil {
 		return ""
 	}
+
 	return string(errStr)
 }
 
 func getErrorObject(err error) *RequestError {
-	if oDataError, ok := err.(*odataerrors.ODataError); ok {
-		terr := oDataError.GetErrorEscaped()
-		if terr != nil {
-			return &RequestError{
-				Code:    *terr.GetCode(),
-				Message: *terr.GetMessage(),
-			}
-		}
+	var requestErr *RequestError
+	if errors.As(err, &requestErr) {
+		return requestErr
 	}
 
 	return &RequestError{Message: err.Error()}
@@ -47,6 +46,7 @@ func isIgnorableErrorPredicate(ignoreErrorCodes []string) plugin.ErrorPredicateW
 				}
 			}
 		}
+
 		return false
 	}
 }
