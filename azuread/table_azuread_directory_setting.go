@@ -7,16 +7,83 @@ import (
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
 )
 
+func getAzureAdDirectorySetting(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (any, error) {
+	client, err := GetGraphClient(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+
+	spec := graphTables[d.Table.Name]
+	path, err := graphTablePath(spec, d, true)
+	if err != nil {
+		return nil, err
+	}
+
+	row, err := client.get(ctx, spec.endpoint, path, graphQuery(spec, d, true))
+	if err != nil {
+		return nil, err
+	}
+
+	name := d.EqualsQuals["name"].GetStringValue()
+	for _, setting := range flattenSettings(row) {
+		if setting["name"] == name {
+			return setting, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func listAzureAdDirectorySettings(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (any, error) {
+	client, err := GetGraphClient(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+
+	spec := graphTables[d.Table.Name]
+	err = client.list(ctx, spec.endpoint, spec.path, graphQuery(spec, d, false), func(row graphObject) bool {
+		for _, setting := range flattenSettings(row) {
+			d.StreamListItem(ctx, setting)
+			if d.RowsRemaining(ctx) == 0 {
+				return false
+			}
+		}
+
+		return d.RowsRemaining(ctx) != 0
+	})
+
+	return nil, err
+}
+
+func flattenSettings(row graphObject) []graphObject {
+	values, _ := row["values"].([]any)
+	result := []graphObject{}
+
+	for _, value := range values {
+		if setting, ok := value.(map[string]any); ok {
+			result = append(result, graphObject{
+				"id":          row["id"],
+				"displayName": row["displayName"],
+				"templateId":  row["templateId"],
+				"name":        setting["name"],
+				"value":       setting["value"],
+			})
+		}
+	}
+
+	return result
+}
+
 func tableAzureAdDirectorySetting(_ context.Context) *plugin.Table {
 	return &plugin.Table{
 		Name:        "azuread_directory_setting",
 		Description: "Represents the configurations that can be used to customize the tenant-wide and object-specific restrictions and allowed behavior",
 		Get: &plugin.GetConfig{
-			Hydrate:    getGraphTable,
+			Hydrate:    getAzureAdDirectorySetting,
 			KeyColumns: plugin.AllColumns([]string{"id", "name"}),
 		},
 		List: &plugin.ListConfig{
-			Hydrate: listGraphTable,
+			Hydrate: listAzureAdDirectorySettings,
 		},
 		Columns: commonColumns([]*plugin.Column{
 			{

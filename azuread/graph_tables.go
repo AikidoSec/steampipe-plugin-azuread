@@ -16,14 +16,20 @@ import (
 )
 
 type graphTableSpec struct {
-	path         string
-	endpoint     graphEndpoint
-	singleton    bool
+	// API-relative resource path
+	path string
+	// API target: Graph v1.0 by default, Graph beta, or the internal portal
+	endpoint graphEndpoint
+	// The endpoint returns one object rather than a paginated collection
+	singleton bool
+	// Required query column whose value replaces {parent} in the path
 	parentColumn string
-	pageSize     int
-	project      bool
-	settings     bool
-	fallback     func(context.Context, *GraphClient) (graphObject, error)
+	// Default $top value, zero omits $top
+	pageSize int
+	// Build $select from the requested table columns
+	project bool
+	// Fetch partial Graph data when an internal portal token is not configured
+	fallback func(context.Context, *GraphClient) (graphObject, error)
 }
 
 var graphTables = map[string]graphTableSpec{
@@ -74,7 +80,6 @@ var graphTables = map[string]graphTableSpec{
 	"azuread_directory_setting": {
 		path:     "settings",
 		endpoint: graphBeta,
-		settings: true,
 	},
 	"azuread_identity_provider": {
 		path: "identity/identityProviders",
@@ -250,17 +255,8 @@ func listGraphTable(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateD
 	}
 
 	err = client.list(ctx, spec.endpoint, path, query, func(row graphObject) bool {
-		if spec.settings {
-			for _, setting := range flattenSettings(row) {
-				d.StreamListItem(ctx, setting)
-				if d.RowsRemaining(ctx) == 0 {
-					return false
-				}
-			}
-		} else {
-			addParentColumn(row, spec, d)
-			d.StreamListItem(ctx, row)
-		}
+		addParentColumn(row, spec, d)
+		d.StreamListItem(ctx, row)
 
 		return d.RowsRemaining(ctx) != 0
 	})
@@ -289,17 +285,6 @@ func getGraphTable(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateDa
 		return nil, err
 	}
 
-	if spec.settings {
-		name := d.EqualsQuals["name"].GetStringValue()
-		for _, setting := range flattenSettings(row) {
-			if setting["name"] == name {
-				return setting, nil
-			}
-		}
-
-		return nil, nil
-	}
-
 	addParentColumn(row, spec, d)
 
 	return row, nil
@@ -309,25 +294,6 @@ func addParentColumn(row graphObject, spec graphTableSpec, d *plugin.QueryData) 
 	if spec.parentColumn != "" {
 		row[toCamelCase(spec.parentColumn)] = d.EqualsQuals[spec.parentColumn].GetStringValue()
 	}
-}
-
-func flattenSettings(row graphObject) []graphObject {
-	values, _ := row["values"].([]any)
-	result := []graphObject{}
-
-	for _, value := range values {
-		if setting, ok := value.(map[string]any); ok {
-			result = append(result, graphObject{
-				"id":          row["id"],
-				"displayName": row["displayName"],
-				"templateId":  row["templateId"],
-				"name":        setting["name"],
-				"value":       setting["value"],
-			})
-		}
-	}
-
-	return result
 }
 
 func graphQuery(spec graphTableSpec, d *plugin.QueryData, get bool) url.Values {

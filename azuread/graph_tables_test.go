@@ -195,13 +195,19 @@ func TestGetHydratorRoutesAllTables(t *testing.T) {
 				if r.URL.String() != expected {
 					t.Fatalf("unexpected request: %s want %s", r.URL, expected)
 				}
-				if spec.settings {
+				if name == "azuread_directory_setting" {
 					return response(200, `{"id":"object","values":[{"name":"option","value":"setting-value"}]}`), nil
 				}
 				return response(200, `{"id":"object","accountEnabled":false}`), nil
 			})
 			d.ConnectionManager.Cache.Set("graphHTTPClient", client)
-			row, err := getGraphTable(ctx, d, nil)
+			var row any
+			var err error
+			if name == "azuread_directory_setting" {
+				row, err = getAzureAdDirectorySetting(ctx, d, nil)
+			} else {
+				row, err = getGraphTable(ctx, d, nil)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
