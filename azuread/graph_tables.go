@@ -48,6 +48,20 @@ type graphTableSpec struct {
 }
 
 var graphTables = map[string]graphTableSpec{
+	"azuread_authentication_method_policy": {
+		path:      "policies/authenticationMethodsPolicy",
+		endpoint:  graphBeta,
+		singleton: true,
+	},
+	"azuread_external_identity_policy": {
+		path:      "policies/externalIdentitiesPolicy",
+		endpoint:  graphBeta,
+		singleton: true,
+	},
+	"azuread_cross_tenant_access_policy": {
+		path:      "policies/crossTenantAccessPolicy",
+		singleton: true,
+	},
 	"azuread_user": {
 		selectFields: map[string][]string{
 			"title": {"displayName", "userPrincipalName"},

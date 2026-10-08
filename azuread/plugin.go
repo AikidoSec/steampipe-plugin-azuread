@@ -29,6 +29,9 @@ func Plugin(ctx context.Context) *plugin.Plugin {
 			NewInstance: ConfigInstance,
 		},
 		TableMap: map[string]*plugin.Table{
+			"azuread_authentication_method_policy":                 tableAzureAdAuthenticationMethodPolicy(ctx),
+			"azuread_external_identity_policy":                     tableAzureAdExternalIdentityPolicy(ctx),
+			"azuread_cross_tenant_access_policy":                   tableAzureAdCrossTenantAccessPolicy(ctx),
 			"azuread_device_registration_policy":                   tableAzureAdDeviceRegistrationPolicy(),
 			"azuread_password_policy":                              tableAzureAdPasswordPolicy(),
 			"azuread_password_reset_policy":                        tableAzureAdPasswordResetPolicy(),

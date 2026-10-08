@@ -39,7 +39,7 @@ func TestOriginalTableSchemasRemainAvailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	tables := Plugin(context.Background()).TableMap
-	if len(original) != 26 || len(tables) != 31 {
+	if len(original) != 26 || len(tables) != 34 {
 		t.Fatalf("unexpected table counts: original=%d current=%d", len(original), len(tables))
 	}
 	for name, columns := range original {
