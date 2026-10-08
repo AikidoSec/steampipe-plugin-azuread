@@ -402,3 +402,11 @@ func tableAzureAdUser(_ context.Context) *plugin.Table {
 		}),
 	}
 }
+
+func getGraphRegisteredDevices(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
+	return graphRelationship(ctx, d, h, "registeredDevices", true)
+}
+
+func getGraphMemberOf(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
+	return graphRelationship(ctx, d, h, "memberOf", false)
+}

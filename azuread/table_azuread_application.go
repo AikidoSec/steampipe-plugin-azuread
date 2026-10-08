@@ -150,12 +150,6 @@ func tableAzureAdApplication(_ context.Context) *plugin.Table {
 				Transform:   graphField("description"),
 			},
 			{
-				Name:        "is_authorization_service_enabled",
-				Type:        proto.ColumnType_BOOL,
-				Description: "Legacy field unavailable in Microsoft Graph; returned as null.",
-				Transform:   graphField("isAuthorizationServiceEnabled"),
-			},
-			{
 				Name:        "oauth2_require_post_response",
 				Type:        proto.ColumnType_BOOL,
 				Description: "Specifies whether, as part of OAuth 2.0 token requests, Azure AD allows POST requests, as opposed to GET requests. The default is false, which specifies that only GET requests are allowed.",

@@ -15,6 +15,13 @@ import (
 	"golang.org/x/text/language"
 )
 
+type graphFilter struct {
+	// Graph property name; empty disables filter pushdown for this column
+	field string
+	// Emit the value as an OData literal rather than a quoted string
+	unquoted bool
+}
+
 type graphTableSpec struct {
 	// API-relative resource path
 	path string
@@ -28,32 +35,65 @@ type graphTableSpec struct {
 	pageSize int
 	// Build $select from the requested table columns
 	project bool
+	// Column-to-$select overrides, an empty field list omits the column
+	selectFields map[string][]string
+	// Per-column filter overrides for Graph property names and value quoting
+	filters map[string]graphFilter
+	// Include $count for every list request.
+	count bool
+	// Maximum page size when a property appears in $select or $filter
+	pageSizeLimits map[string]int
 	// Fetch partial Graph data when an internal portal token is not configured
 	fallback func(context.Context, *GraphClient) (graphObject, error)
 }
 
 var graphTables = map[string]graphTableSpec{
 	"azuread_user": {
+		selectFields: map[string][]string{
+			"title": {"displayName", "userPrincipalName"},
+		},
+		count: true,
+		pageSizeLimits: map[string]int{
+			"signInActivity": 500,
+		},
 		path:     "users",
 		pageSize: 999,
 		project:  true,
 	},
 	"azuread_group": {
+		selectFields: map[string][]string{
+			"title": {"displayName"},
+			"tags":  {"assignedLabels"},
+		},
+		count:    true,
 		path:     "groups",
 		pageSize: 999,
 		project:  true,
 	},
 	"azuread_application": {
+		selectFields: map[string][]string{
+			"title":                            {"displayName"},
+			"is_authorization_service_enabled": nil,
+		},
+		count:    true,
 		path:     "applications",
 		pageSize: 999,
 		project:  true,
 	},
 	"azuread_service_principal": {
+		selectFields: map[string][]string{
+			"title": {"displayName"},
+		},
+		count:    true,
 		path:     "servicePrincipals",
 		pageSize: 100,
 		project:  true,
 	},
 	"azuread_device": {
+		selectFields: map[string][]string{
+			"title": {"displayName", "deviceId"},
+		},
+		count:    true,
 		path:     "devices",
 		pageSize: 999,
 		project:  true,
@@ -82,6 +122,11 @@ var graphTables = map[string]graphTableSpec{
 		endpoint: graphBeta,
 	},
 	"azuread_identity_provider": {
+		filters: map[string]graphFilter{
+			"name": {
+				field: "displayName",
+			},
+		},
 		path: "identity/identityProviders",
 	},
 	"azuread_conditional_access_policy": {
@@ -90,6 +135,9 @@ var graphTables = map[string]graphTableSpec{
 		pageSize: 1000,
 	},
 	"azuread_conditional_access_named_location": {
+		filters: map[string]graphFilter{
+			"location_type": {},
+		},
 		path:     "identity/conditionalAccess/namedLocations",
 		endpoint: graphBeta,
 		pageSize: 1000,
@@ -118,25 +166,56 @@ var graphTables = map[string]graphTableSpec{
 		singleton: true,
 	},
 	"azuread_user_app_role_assignment": {
+		count: true,
+		filters: map[string]graphFilter{
+			"resource_id": {
+				field:    "resourceId",
+				unquoted: true,
+			},
+		},
 		path:         "users/{parent}/appRoleAssignments",
 		parentColumn: "user_id",
 		pageSize:     999,
 	},
 	"azuread_group_app_role_assignment": {
+		filters: map[string]graphFilter{
+			"resource_id": {
+				field:    "resourceId",
+				unquoted: true,
+			},
+		},
 		path:         "groups/{parent}/appRoleAssignments",
 		parentColumn: "group_id",
 		pageSize:     999,
 	},
 	"azuread_service_principal_app_role_assignment": {
+		filters: map[string]graphFilter{
+			"resource_id": {
+				field:    "resourceId",
+				unquoted: true,
+			},
+		},
 		path:         "servicePrincipals/{parent}/appRoleAssignments",
 		parentColumn: "service_principal_id",
 		pageSize:     999,
 	},
 	"azuread_service_principal_app_role_assigned_to": {
+		filters: map[string]graphFilter{
+			"resource_id": {
+				field:    "resourceId",
+				unquoted: true,
+			},
+		},
 		path:         "servicePrincipals/{parent}/appRoleAssignedTo",
 		parentColumn: "service_principal_id",
 	},
 	"azuread_application_app_role_assigned_to": {
+		filters: map[string]graphFilter{
+			"resource_id": {
+				field:    "resourceId",
+				unquoted: true,
+			},
+		},
 		path:         "servicePrincipals(appId='{parent}')/appRoleAssignedTo",
 		parentColumn: "app_id",
 	},
@@ -309,38 +388,22 @@ func graphQuery(spec graphTableSpec, d *plugin.QueryData, get bool) url.Values {
 				continue
 			}
 
-			switch name {
-			case "is_authorization_service_enabled":
-				// Legacy column; Microsoft Graph exposes no such application property.
+			if fields, ok := spec.selectFields[name]; ok {
+				for _, field := range fields {
+					selected[field] = true
+				}
+
 				continue
-
-			case "title":
-				selected["displayName"] = true
-				if d.Table.Name == "azuread_user" {
-					selected["userPrincipalName"] = true
-				}
-
-				if d.Table.Name == "azuread_device" {
-					selected["deviceId"] = true
-				}
-
-			case "tags":
-				if spec.path == "groups" {
-					selected["assignedLabels"] = true
-				} else {
-					selected["tags"] = true
-				}
-
-			default:
-				path := toCamelCase(name)
-				if column.Transform != nil && len(column.Transform.Transforms) > 0 {
-					if field, ok := column.Transform.Transforms[0].Param.(string); ok {
-						path = field
-					}
-				}
-
-				selected[strings.Split(path, ".")[0]] = true
 			}
+
+			path := toCamelCase(name)
+			if column.Transform != nil && len(column.Transform.Transforms) > 0 {
+				if field, ok := column.Transform.Transforms[0].Param.(string); ok {
+					path = field
+				}
+			}
+
+			selected[strings.Split(path, ".")[0]] = true
 		}
 
 		keys := make([]string, 0, len(selected))
@@ -352,31 +415,30 @@ func graphQuery(spec graphTableSpec, d *plugin.QueryData, get bool) url.Values {
 		query.Set("$select", strings.Join(keys, ","))
 	}
 
-	var expand []string
-	for _, name := range columns {
-		switch name {
-		case "principal", "app_scope", "directory_scope", "role_definition":
-			if strings.HasPrefix(spec.path, "roleManagement/") {
-				expand = append(expand, toCamelCase(name))
-			}
-		case "inherits_permissions_from":
-			if spec.path == "roleManagement/directory/roleDefinitions" {
-				expand = append(expand, "inheritsPermissionsFrom")
-			}
-		}
-	}
-
-	if len(expand) > 0 {
-		query.Set("$expand", strings.Join(expand, ","))
-	}
-
 	if get || spec.singleton {
 		return query
 	}
 
+	if raw := d.EqualsQuals["filter"].GetStringValue(); raw != "" {
+		query.Set("$filter", raw)
+	} else {
+		filters := graphFilters(spec, d)
+		if len(filters) > 0 {
+			query.Set("$filter", strings.Join(filters, " and "))
+		}
+	}
+
+	if spec.count {
+		query.Set("$count", "true")
+	}
+
 	pageSize := spec.pageSize
-	if spec.path == "users" && strings.Contains(query.Get("$select"), "signInActivity") {
-		pageSize = 500
+	for field, maximum := range spec.pageSizeLimits {
+		if strings.Contains(query.Get("$select"), field) || strings.Contains(query.Get("$filter"), field) {
+			if pageSize > maximum {
+				pageSize = maximum
+			}
+		}
 	}
 
 	if pageSize > 0 {
@@ -387,91 +449,76 @@ func graphQuery(spec graphTableSpec, d *plugin.QueryData, get bool) url.Values {
 		query.Set("$top", strconv.Itoa(pageSize))
 	}
 
-	if raw := d.EqualsQuals["filter"].GetStringValue(); raw != "" {
-		query.Set("$filter", raw)
-	} else {
-		var filters []string
-		if d.Table.List != nil {
-			for _, key := range d.Table.List.KeyColumns {
-				name := key.Name
-				if name == spec.parentColumn || name == "filter" || name == "location_type" {
-					continue
+	return query
+}
+
+func graphFilters(spec graphTableSpec, d *plugin.QueryData) []string {
+	if d.Table.List == nil {
+		return nil
+	}
+
+	var filters []string
+	for _, key := range d.Table.List.KeyColumns {
+		name := key.Name
+		if name == spec.parentColumn || name == "filter" {
+			continue
+		}
+
+		col := graphColumn(d.Table, name)
+		if col == nil {
+			continue
+		}
+
+		filter, ok := spec.filters[name]
+		if !ok {
+			filter.field = toCamelCase(name)
+		}
+		if filter.field == "" {
+			continue
+		}
+
+		quals := d.Quals[name]
+		if quals == nil {
+			continue
+		}
+
+		for _, q := range quals.Quals {
+			op := map[string]string{
+				"=":  "eq",
+				"<>": "ne",
+				">":  "gt",
+				">=": "ge",
+				"<":  "lt",
+				"<=": "le",
+			}[q.Operator]
+			if op == "" {
+				continue
+			}
+
+			var value string
+			switch col.Type {
+			case proto.ColumnType_BOOL:
+				boolValue := q.Value.GetBoolValue()
+				if q.Operator == "<>" {
+					op = "eq"
+					boolValue = !boolValue
 				}
 
-				col := graphColumn(d.Table, name)
-				if col == nil {
-					continue
-				}
-
-				field := toCamelCase(name)
-				if name == "name" && spec.path == "identity/identityProviders" {
-					field = "displayName"
-				}
-
-				quals := d.Quals[name]
-				if quals == nil {
-					continue
-				}
-
-				for _, q := range quals.Quals {
-					op := map[string]string{
-						"=":  "eq",
-						"<>": "ne",
-						">":  "gt",
-						">=": "ge",
-						"<":  "lt",
-						"<=": "le",
-					}[q.Operator]
-					if op == "" {
-						continue
-					}
-
-					var value string
-					switch col.Type {
-					case proto.ColumnType_BOOL:
-						boolValue := q.Value.GetBoolValue()
-						if q.Operator == "<>" {
-							op = "eq"
-							boolValue = !boolValue
-						}
-
-						value = strconv.FormatBool(boolValue)
-					case proto.ColumnType_TIMESTAMP:
-						value = q.Value.GetTimestampValue().AsTime().Format(time.RFC3339Nano)
-					default:
-						value = q.Value.GetStringValue()
-						if name != "resource_id" || spec.parentColumn == "" {
-							value = "'" + strings.ReplaceAll(value, "'", "''") + "'"
-						}
-					}
-
-					filters = append(filters, field+" "+op+" "+value)
+				value = strconv.FormatBool(boolValue)
+			case proto.ColumnType_TIMESTAMP:
+				value = q.Value.GetTimestampValue().AsTime().Format(time.RFC3339Nano)
+			default:
+				value = q.Value.GetStringValue()
+				if !filter.unquoted {
+					value = "'" + strings.ReplaceAll(value, "'", "''") + "'"
 				}
 			}
-		}
 
-		if len(filters) > 0 {
-			query.Set("$filter", strings.Join(filters, " and "))
+			filters = append(filters, filter.field+" "+op+" "+value)
 		}
 	}
 
-	if query.Get("$filter") != "" && (spec.path == "users" || spec.path == "groups" || spec.path == "devices" || spec.path == "servicePrincipals" || spec.path == "applications") {
-		query.Set("$count", "true")
-	}
-
-	if spec.path == "users/{parent}/appRoleAssignments" {
-		// Required for complete results when users have many indirect assignments.
-		query.Set("$count", "true")
-	}
-
-	// The 500-user maximum also applies when signInActivity is only filtered.
-	if spec.path == "users" && strings.Contains(query.Get("$filter"), "signInActivity") {
-		if top, _ := strconv.Atoi(query.Get("$top")); top > 500 {
-			query.Set("$top", "500")
-		}
-	}
-
-	return query
+	return filters
 }
 
 func graphColumn(table *plugin.Table, name string) *plugin.Column {
@@ -484,6 +531,7 @@ func graphColumn(table *plugin.Table, name string) *plugin.Column {
 	return nil
 }
 
+// graphRelationship returns connected resources for a given resource. For example the members of a group.
 func graphRelationship(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData, relationship string, idsOnly bool) (any, error) {
 	spec := graphTables[d.Table.Name]
 
@@ -524,26 +572,6 @@ func graphRelationship(ctx context.Context, d *plugin.QueryData, h *plugin.Hydra
 	}
 
 	return members, nil
-}
-
-func getGraphOwners(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
-	return graphRelationship(ctx, d, h, "owners", true)
-}
-
-func getGraphMembers(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
-	return graphRelationship(ctx, d, h, "members", true)
-}
-
-func getGraphMemberOf(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
-	return graphRelationship(ctx, d, h, "memberOf", false)
-}
-
-func getGraphRegisteredUsers(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
-	return graphRelationship(ctx, d, h, "registeredUsers", true)
-}
-
-func getGraphRegisteredDevices(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
-	return graphRelationship(ctx, d, h, "registeredDevices", true)
 }
 
 func getGraphGroupSubscription(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {

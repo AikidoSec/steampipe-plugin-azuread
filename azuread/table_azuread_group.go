@@ -278,3 +278,11 @@ func tableAzureAdGroup(_ context.Context) *plugin.Table {
 		}),
 	}
 }
+
+func getGraphMembers(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
+	return graphRelationship(ctx, d, h, "members", true)
+}
+
+func getGraphOwners(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
+	return graphRelationship(ctx, d, h, "owners", true)
+}

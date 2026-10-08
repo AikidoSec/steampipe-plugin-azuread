@@ -216,3 +216,7 @@ func tableAzureAdDevice(_ context.Context) *plugin.Table {
 		}),
 	}
 }
+
+func getGraphRegisteredUsers(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (any, error) {
+	return graphRelationship(ctx, d, h, "registeredUsers", true)
+}

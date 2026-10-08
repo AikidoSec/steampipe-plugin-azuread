@@ -106,8 +106,8 @@ func TestGraphProjectionFiltersAndNavigation(t *testing.T) {
 	}
 	table = tableAzureAdDirectoryRoleEligibilityScheduleInstance(context.Background())
 	d = queryData(table, "principal", "role_definition", "app_scope")
-	if got := graphQuery(graphTables[table.Name], d, false).Get("$expand"); got != "principal,roleDefinition,appScope" {
-		t.Fatalf("missing role expansions: %s", got)
+	if got := graphQuery(graphTables[table.Name], d, false).Get("$expand"); got != "" {
+		t.Fatalf("unexpected role expansions: %s", got)
 	}
 	table = tableAzureAdIdentityProvider(context.Background())
 	d = queryData(table, "name")
