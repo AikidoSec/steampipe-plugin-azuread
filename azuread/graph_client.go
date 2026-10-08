@@ -30,7 +30,6 @@ type GraphClient struct {
 	http        *http.Client
 	graphURL    string
 	portalURL   string
-	version     string
 	token       tokenSource
 	portalToken tokenSource
 }
@@ -40,13 +39,9 @@ func (c *GraphClient) endpointURL(endpoint graphEndpoint, path string) string {
 		return strings.TrimRight(c.portalURL, "/") + "/" + strings.TrimLeft(path, "/")
 	}
 
-	version := c.version
-	if endpoint == graphBeta {
-		version = "beta"
-	}
-
-	if version == "beta" && (path == "groupSettings" || strings.HasPrefix(path, "groupSettings/")) {
-		path = "settings" + strings.TrimPrefix(path, "groupSettings")
+	version := "v1.0"
+	if endpoint != graphDefault {
+		version = string(endpoint)
 	}
 
 	return strings.TrimRight(c.graphURL, "/") + "/" + version + "/" + strings.TrimLeft(path, "/")
@@ -59,81 +54,29 @@ func (c *GraphClient) get(ctx context.Context, endpoint graphEndpoint, path stri
 	}
 	u.RawQuery = query.Encode()
 
-	return c.requestUserPage(ctx, endpoint, path, u.String())
-}
-
-// Non-premium tenants cannot return signInActivity.
-func (c *GraphClient) requestUserPage(ctx context.Context, endpoint graphEndpoint, path, rawURL string) (graphObject, error) {
-	row, err := c.request(ctx, endpoint, rawURL)
-
-	var requestErr *RequestError
-	if endpoint == graphPortal || (path != "users" && !strings.HasPrefix(path, "users/")) || !errors.As(err, &requestErr) || requestErr.Code != "Authentication_RequestFromNonPremiumTenantOrB2CTenant" {
-		return row, err
-	}
-
-	u, parseErr := url.Parse(rawURL)
-	if parseErr != nil {
-		return nil, err
-	}
-
-	query := u.Query()
-	// Filters on signInActivity still require a premium license.
-	if strings.Contains(query.Get("$filter"), "signInActivity") {
-		return nil, err
-	}
-
-	var fields []string
-	removed := false
-
-	for _, field := range strings.Split(query.Get("$select"), ",") {
-		if strings.TrimSpace(field) == "signInActivity" {
-			removed = true
-			continue
-		}
-
-		fields = append(fields, field)
-	}
-
-	if !removed {
-		return nil, err
-	}
-
-	query.Set("$select", strings.Join(fields, ","))
-	u.RawQuery = query.Encode()
-
 	return c.request(ctx, endpoint, u.String())
 }
 
-// Returning false from visit stops pagination.
-func (c *GraphClient) list(ctx context.Context, endpoint graphEndpoint, path string, query url.Values, visit func(graphObject) bool) error {
+// Returning false from streamRow stops pagination.
+func (c *GraphClient) list(ctx context.Context, endpoint graphEndpoint, path string, query url.Values, streamRow func(graphObject) bool) error {
+	page, err := c.get(ctx, endpoint, path, query)
+	if err != nil {
+		return err
+	}
+
+	return c.listPages(ctx, endpoint, path, query, page, streamRow)
+}
+
+func (c *GraphClient) listPages(ctx context.Context, endpoint graphEndpoint, path string, query url.Values, page graphObject, streamRow func(graphObject) bool) error {
 	u, err := url.Parse(c.endpointURL(endpoint, path))
 	if err != nil {
 		return err
 	}
 
 	u.RawQuery = query.Encode()
+	seen := map[string]bool{u.String(): true}
 
-	next := u.String()
-	seen := make(map[string]bool)
-
-	for next != "" {
-		if seen[next] {
-			return fmt.Errorf("graph returned a repeated pagination URL")
-		}
-
-		seen[next] = true
-
-		var page graphObject
-		if len(seen) == 1 {
-			page, err = c.requestUserPage(ctx, endpoint, path, next)
-		} else {
-			// Graph continuation URLs are opaque.
-			page, err = c.request(ctx, endpoint, next)
-		}
-		if err != nil {
-			return err
-		}
-
+	for {
 		values, ok := page["value"].([]any)
 		if !ok {
 			return fmt.Errorf("graph collection response is missing its value array")
@@ -149,12 +92,12 @@ func (c *GraphClient) list(ctx context.Context, endpoint graphEndpoint, path str
 				return fmt.Errorf("graph collection contains a non-object value")
 			}
 
-			if !visit(row) {
+			if !streamRow(row) {
 				return nil
 			}
 		}
 
-		next = ""
+		next := ""
 		if link, exists := page["@odata.nextLink"]; exists && link != nil {
 			var ok bool
 			next, ok = link.(string)
@@ -162,9 +105,22 @@ func (c *GraphClient) list(ctx context.Context, endpoint graphEndpoint, path str
 				return fmt.Errorf("graph collection contains a non-string pagination URL")
 			}
 		}
-	}
 
-	return nil
+		if next == "" {
+			return nil
+		}
+
+		if seen[next] {
+			return fmt.Errorf("graph returned a repeated pagination URL")
+		}
+
+		seen[next] = true
+		var err error
+		page, err = c.request(ctx, endpoint, next)
+		if err != nil {
+			return err
+		}
+	}
 }
 
 func (c *GraphClient) request(ctx context.Context, endpoint graphEndpoint, rawURL string) (graphObject, error) {

@@ -16,7 +16,7 @@ func getSelfServiceGroupManagementFromGraph(ctx context.Context, client *GraphCl
 	}
 
 	permissions, _ := policy["defaultUserRolePermissions"].(map[string]any)
-	settings, err := policySettings(ctx, client, graphDefault, "groupSettings", "Group.Unified")
+	settings, err := policySettings(ctx, client, graphBeta, "settings", "Group.Unified")
 	if err != nil {
 		return nil, err
 	}

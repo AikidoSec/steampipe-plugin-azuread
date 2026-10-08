@@ -521,11 +521,6 @@ func graphColumn(table *plugin.Table, name string) *plugin.Column {
 func graphRelationship(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData, relationship string, idsOnly bool) (any, error) {
 	spec := graphTables[d.Table.Name]
 
-	// The v1.0 group-members endpoint omits service principals.
-	if spec.path == "groups" && relationship == "members" {
-		spec.endpoint = graphBeta
-	}
-
 	row := h.Item.(graphObject)
 	id, _ := row["id"].(string)
 	if id == "" {

@@ -67,7 +67,7 @@ steampipe plugin install azuread
 
 ### API versions and internal portal collection
 
-The plugin uses a lightweight HTTP client. Routing varies by resource: conditional access policies, named locations, directory settings, and device registration policy use beta; other Graph resources default to v1.0. The optional `graph_api_version = "beta"` setting (or `AZURE_GRAPH_API_VERSION`) also routes otherwise-v1.0 resources to beta. The four dual-source policy tables use the internal portal when `internal_api_refresh_token` (or `AZURE_INTERNAL_API_REFRESH_TOKEN`) is configured with a tenant ID; otherwise they return partial Graph coverage, leaving unavailable fields NULL. See [HTTP collection and configuration](http-client.md) for endpoints and examples.
+The plugin uses a lightweight HTTP client. Routing varies by resource: conditional access policies, named locations, directory settings, and device registration policy use beta; other Graph resources use v1.0. The four dual-source policy tables use the internal portal when `internal_api_refresh_token` (or `AZURE_INTERNAL_API_REFRESH_TOKEN`) is configured with a tenant ID; otherwise they return partial Graph coverage, leaving unavailable fields NULL. See [HTTP collection and configuration](http-client.md) for endpoints and examples.
 
 ### Configuration
 

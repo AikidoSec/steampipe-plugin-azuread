@@ -2,8 +2,6 @@
 
 Device registration policy collected from Microsoft Graph beta `/policies/deviceRegistrationPolicy`. Returns one row per tenant, including a `raw` JSON column with the full response.
 
-Uses beta automatically, regardless of the connection's `graph_api_version`.
-
 ## Examples
 
 ```sql

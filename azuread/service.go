@@ -57,15 +57,6 @@ func newGraphClient(config AzureADConfig) (*GraphClient, error) {
 	clientID := configString(config.ClientID, "AZURE_CLIENT_ID")
 	secret := configString(config.ClientSecret, "AZURE_CLIENT_SECRET")
 	environment := configString(config.Environment, "AZURE_ENVIRONMENT")
-	version := configString(config.GraphAPIVersion, "AZURE_GRAPH_API_VERSION")
-
-	if version == "" {
-		version = "v1.0"
-	}
-
-	if version != "v1.0" && version != "beta" {
-		return nil, fmt.Errorf("graph_api_version must be v1.0 or beta")
-	}
 
 	graphURL, loginURL, cloudConfig, err := graphCloud(environment)
 	if err != nil {
@@ -110,7 +101,6 @@ func newGraphClient(config AzureADConfig) (*GraphClient, error) {
 	client := &GraphClient{
 		http:      httpClient,
 		graphURL:  graphURL,
-		version:   version,
 		portalURL: "https://main.iam.ad.ext.azure.com/api",
 		token: func(ctx context.Context) (string, error) {
 			token, err := credential.GetToken(ctx, policy.TokenRequestOptions{

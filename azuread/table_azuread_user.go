@@ -2,25 +2,102 @@ package azuread
 
 import (
 	"context"
+	"errors"
+	"net/url"
+	"strings"
 
 	"github.com/turbot/steampipe-plugin-sdk/v5/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin/transform"
 )
 
+func getUserFromGraph(ctx context.Context, client *GraphClient, path string, query url.Values) (graphObject, error) {
+	row, err := client.get(ctx, graphDefault, path, query)
+
+	var requestErr *RequestError
+	if !errors.As(err, &requestErr) || requestErr.Code != "Authentication_RequestFromNonPremiumTenantOrB2CTenant" {
+		return row, err
+	}
+
+	// Filters on signInActivity still require a premium license.
+	if strings.Contains(query.Get("$filter"), "signInActivity") {
+		return nil, err
+	}
+
+	var fields []string
+	removed := false
+	for _, field := range strings.Split(query.Get("$select"), ",") {
+		if strings.TrimSpace(field) == "signInActivity" {
+			removed = true
+			continue
+		}
+
+		fields = append(fields, field)
+	}
+
+	if !removed {
+		return nil, err
+	}
+
+	fallbackQuery := make(url.Values, len(query))
+	for key, values := range query {
+		fallbackQuery[key] = values
+	}
+
+	fallbackQuery.Set("$select", strings.Join(fields, ","))
+
+	return client.get(ctx, graphDefault, path, fallbackQuery)
+}
+
+func getAzureAdUser(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (any, error) {
+	client, err := GetGraphClient(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+
+	spec := graphTables[d.Table.Name]
+	path, err := graphTablePath(spec, d, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return getUserFromGraph(ctx, client, path, graphQuery(spec, d, true))
+}
+
+func listAzureAdUsers(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (any, error) {
+	client, err := GetGraphClient(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+
+	spec := graphTables[d.Table.Name]
+	query := graphQuery(spec, d, false)
+	page, err := getUserFromGraph(ctx, client, spec.path, query)
+	if err != nil {
+		return nil, err
+	}
+
+	err = client.listPages(ctx, graphDefault, spec.path, query, page, func(row graphObject) bool {
+		d.StreamListItem(ctx, row)
+		return d.RowsRemaining(ctx) != 0
+	})
+
+	return nil, err
+}
+
 func tableAzureAdUser(_ context.Context) *plugin.Table {
 	return &plugin.Table{
 		Name:        "azuread_user",
 		Description: "Represents an Azure AD user account.",
 		Get: &plugin.GetConfig{
-			Hydrate: getGraphTable,
+			Hydrate: getAzureAdUser,
 			IgnoreConfig: &plugin.IgnoreConfig{
 				ShouldIgnoreErrorFunc: isIgnorableErrorPredicate([]string{"Request_ResourceNotFound", "Invalid object identifier"}),
 			},
 			KeyColumns: plugin.SingleColumn("id"),
 		},
 		List: &plugin.ListConfig{
-			Hydrate: listGraphTable,
+			Hydrate: listAzureAdUsers,
 			KeyColumns: plugin.KeyColumnSlice{
 				// Key fields
 				{

@@ -11,7 +11,6 @@ type AzureADConfig struct {
 	EnableMsi               *bool   `hcl:"enable_msi"`
 	MsiEndpoint             *string `hcl:"msi_endpoint"`
 	Environment             *string `hcl:"environment"`
-	GraphAPIVersion         *string `hcl:"graph_api_version"`
 	InternalAPIRefreshToken *string `hcl:"internal_api_refresh_token"`
 }
 

@@ -28,7 +28,7 @@ func response(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}
 }
 func testGraphClient(f roundTripFunc) *GraphClient {
-	return &GraphClient{http: &http.Client{Transport: f}, graphURL: "https://graph.example", portalURL: "https://portal.example/api", version: "v1.0", token: func(context.Context) (string, error) { return "graph-token", nil }, portalToken: func(context.Context) (string, error) { return "portal-token", nil }}
+	return &GraphClient{http: &http.Client{Transport: f}, graphURL: "https://graph.example", portalURL: "https://portal.example/api", token: func(context.Context) (string, error) { return "graph-token", nil }, portalToken: func(context.Context) (string, error) { return "portal-token", nil }}
 }
 
 func TestGraphPaginationPreservesOpaqueURLAndHeaders(t *testing.T) {
@@ -177,17 +177,15 @@ func TestGraphEndpointRoutingAndSeparatePortalToken(t *testing.T) {
 		return response(200, `{"objectId":"tenant"}`), nil
 	})
 	for _, tt := range []struct {
-		version    string
 		endpoint   graphEndpoint
 		path, want string
 	}{
-		{"v1.0", graphDefault, "users", "https://graph.example/v1.0/users"},
-		{"v1.0", graphBeta, "policies/deviceRegistrationPolicy", "https://graph.example/beta/policies/deviceRegistrationPolicy"},
-		{"beta", graphDefault, "identity/conditionalAccess/policies", "https://graph.example/beta/identity/conditionalAccess/policies"},
-		{"v1.0", graphDefault, "groupSettings/a", "https://graph.example/v1.0/groupSettings/a"},
-		{"beta", graphDefault, "groupSettings/a", "https://graph.example/beta/settings/a"},
+		{graphDefault, "users", "https://graph.example/v1.0/users"},
+		{graphBeta, "policies/deviceRegistrationPolicy", "https://graph.example/beta/policies/deviceRegistrationPolicy"},
+		{graphBeta, "identity/conditionalAccess/policies", "https://graph.example/beta/identity/conditionalAccess/policies"},
+		{graphDefault, "groupSettings/a", "https://graph.example/v1.0/groupSettings/a"},
+		{graphBeta, "settings/a", "https://graph.example/beta/settings/a"},
 	} {
-		client.version = tt.version
 		if got := client.endpointURL(tt.endpoint, tt.path); got != tt.want {
 			t.Fatalf("got %s want %s", got, tt.want)
 		}

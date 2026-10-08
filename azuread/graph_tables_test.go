@@ -86,7 +86,7 @@ func TestGraphProjectionFiltersAndNavigation(t *testing.T) {
 		t.Fatalf("incorrect paging: %s", query.Encode())
 	}
 	filter := query.Get("$filter")
-	if !strings.Contains(filter, "displayName eq 'O''Brien'") || !strings.Contains(filter, "accountEnabled ne true") {
+	if !strings.Contains(filter, "displayName eq 'O''Brien'") || !strings.Contains(filter, "accountEnabled eq false") {
 		t.Fatalf("bad filter %s", filter)
 	}
 	if query.Get("$expand") != "" {
@@ -188,7 +188,7 @@ func TestGetHydratorRoutesAllTables(t *testing.T) {
 			}
 			client := testGraphClient(func(r *http.Request) (*http.Response, error) {
 				expectedPath, _ := graphTablePath(spec, d, true)
-				expected := (&GraphClient{graphURL: "https://graph.example", portalURL: "https://portal.example/api", version: "v1.0"}).endpointURL(spec.endpoint, expectedPath)
+				expected := (&GraphClient{graphURL: "https://graph.example", portalURL: "https://portal.example/api"}).endpointURL(spec.endpoint, expectedPath)
 				if q := graphQuery(spec, d, true).Encode(); q != "" {
 					expected += "?" + q
 				}
@@ -213,7 +213,7 @@ func TestGetHydratorRoutesAllTables(t *testing.T) {
 }
 
 func TestAssetEndpointDefaults(t *testing.T) {
-	client := &GraphClient{graphURL: "https://graph.microsoft.com", version: "v1.0"}
+	client := &GraphClient{graphURL: "https://graph.microsoft.com"}
 	expected := map[string]string{
 		"azuread_user":                              "https://graph.microsoft.com/v1.0/users",
 		"azuread_group":                             "https://graph.microsoft.com/v1.0/groups",

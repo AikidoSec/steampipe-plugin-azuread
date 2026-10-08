@@ -13,12 +13,12 @@ Routing is selected per resource, without requiring a version setting:
 | Named locations | `/beta/identity/conditionalAccess/namedLocations` |
 | Directory settings | `/beta/settings` |
 | Device registration policy | `/beta/policies/deviceRegistrationPolicy` |
-| Group members | `/beta/groups/{id}/members` (documented workaround for omitted service principals in v1.0) |
+| Group members | `/v1.0/groups/{id}/members` |
 | Internal portal resources | Separate portal API (see below) |
 
 Audit logs, domains, and PIM eligibility use v1.0. Directory settings return one SQL row per setting value.
 
-The optional `graph_api_version = "beta"` connection setting (or `AZURE_GRAPH_API_VERSION=beta`) switches otherwise-v1.0 resources to beta. Resources explicitly routed to beta above always use beta, even when the connection setting is `v1.0`. There is no automatic fallback on a permission error.
+There is no automatic fallback on a permission error.
 
 Azure China uses `https://microsoftgraph.chinacloudapi.cn`. Azure US Government uses `https://graph.microsoft.us`, with the corresponding authentication authority and token scope.
 
@@ -70,7 +70,7 @@ Requests have a 60-second HTTP timeout and retry HTTP 429/500/502/503/504 up to 
 
 Service-principal pages contain up to 100 objects. User pages contain up to 999 objects, or 500 when selecting or filtering `signInActivity`. Collections follow server-provided pagination links. [Directory-role membership](https://learn.microsoft.com/en-us/graph/api/directoryrole-list-members?view=graph-rest-1.0) returns a default of 1,000 objects and does not support `$top` pagination.
 
-Group membership uses beta to include service principals omitted by the [v1.0 endpoint](https://learn.microsoft.com/en-us/graph/api/group-list-members?view=graph-rest-1.0). User app-role queries include indirect assignments through direct group memberships.
+Group membership uses the [v1.0 endpoint](https://learn.microsoft.com/en-us/graph/api/group-list-members?view=graph-rest-1.0), which has a known limitation omitting service principals. User app-role queries include indirect assignments through direct group memberships.
 
 US Government L4 is supported; DoD L5 is not. Internal portal endpoints are private, unversioned APIs outside the public Graph API contract.
 
@@ -83,8 +83,8 @@ Device-registration policy requires `Policy.Read.DeviceConfiguration` for applic
 | `azuread_password_policy` | `/beta/settings`, `Password Rule Settings` | Lockout threshold/duration, custom banned passwords and enforcement, on-premises check enabled; string mode in `graph_on_premises_password_check_mode`. |
 | `azuread_password_reset_policy` | `/v1.0/policies/authorizationPolicy` | `administrators_allowed_to_use_sspr` only; user SSPR scope, groups, registration and notification fields remain NULL. |
 | `azuread_directory_properties` | `/v1.0/policies/authorizationPolicy` | `users_can_register_apps` and role-scoped `allow_invites_from`; portal IDs, display name, invitation boolean and access restrictions remain NULL. |
-| `azuread_self_service_group_management` | `/v1.0/policies/authorizationPolicy` and `/v1.0/groupSettings`, `Group.Unified` | `users_can_create_security_groups`, `users_can_create_microsoft365_groups`, `group_creation_allowed_group_id`. Portal management fields remain NULL because creation and management differ. |
+| `azuread_self_service_group_management` | `/v1.0/policies/authorizationPolicy` and `/beta/settings`, `Group.Unified` | `users_can_create_security_groups`, `users_can_create_microsoft365_groups`, `group_creation_allowed_group_id`. Portal management fields remain NULL because creation and management differ. |
 
-The connection's beta override also applies to the otherwise-v1.0 endpoints. Collections are paginated. Missing settings objects or values are left unknown, not filled with assumed defaults; the tenant row still exposes the source payload and `data_source`. No portal numeric enum is inferred from Graph's Audit/Enforce strings. Source selection happens before requests: a configured but invalid portal token produces an error, not a silent switch to Graph.
+Collections are paginated. Missing settings objects or values are left unknown, not filled with assumed defaults; the tenant row still exposes the source payload and `data_source`. No portal numeric enum is inferred from Graph's Audit/Enforce strings. Source selection happens before requests: a configured but invalid portal token produces an error, not a silent switch to Graph.
 
 Graph application credentials require consented permissions for the selected endpoints (for example `Policy.Read.All` for authorization policy and permissions to read directory/group settings). See [authorization policy](https://learn.microsoft.com/en-us/graph/api/authorizationpolicy-get?view=graph-rest-1.0), [group settings](https://learn.microsoft.com/en-us/graph/group-directory-settings), and [Microsoft365DSC's password settings implementation](https://www.powershellgallery.com/packages/Microsoft365DSC/1.25.723.2/Content/DSCResources%5CMSFT_AADPasswordRuleSettings%5CMSFT_AADPasswordRuleSettings.psm1).
