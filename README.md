@@ -36,6 +36,10 @@ This plugin is available for the following engines:
 | [Export](https://steampipe.io/docs/steampipe_export/overview) | Steampipe Plugin Exporters provide a flexible mechanism for exporting information from cloud services and APIs. Each exporter is a stand-alone binary that allows you to extract data using Steampipe plugins without a database.
 | [Turbot Pipes](https://turbot.com/pipes/docs) | Turbot Pipes is the only intelligence, automation & security platform built specifically for DevOps. Pipes provide hosted Steampipe database instances, shared dashboards, snapshots, and more.
 
+## API client
+
+See [API collection and configuration](docs/http-client.md) for endpoints, authentication, and supported fields.
+
 ## Developing
 
 Prerequisites:
