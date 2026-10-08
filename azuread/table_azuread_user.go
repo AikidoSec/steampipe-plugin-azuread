@@ -39,11 +39,7 @@ func getUserFromGraph(ctx context.Context, client *GraphClient, path string, que
 		return nil, err
 	}
 
-	fallbackQuery := make(url.Values, len(query))
-	for key, values := range query {
-		fallbackQuery[key] = values
-	}
-
+	fallbackQuery := query.Clone()
 	fallbackQuery.Set("$select", strings.Join(fields, ","))
 
 	return client.get(ctx, graphDefault, path, fallbackQuery)
